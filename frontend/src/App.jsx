@@ -30,12 +30,18 @@ const samplePayload = {
   ]
 };
 
+const tabs = [
+  { key: "audit", label: "Audit" },
+  { key: "hasil", label: "Hasil" }
+];
+
 export function App() {
   const [apiUrl, setApiUrl] = useState("http://localhost:8000/audit");
   const [jsonInput, setJsonInput] = useState(JSON.stringify(samplePayload, null, 2));
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("audit");
 
   const parsedPreview = useMemo(() => {
     try {
@@ -63,6 +69,7 @@ export function App() {
 
       const data = await response.json();
       setResult(data);
+      setActiveTab("hasil");
     } catch (err) {
       setError(err.message || "Gagal memproses audit");
       setResult(null);
@@ -73,10 +80,12 @@ export function App() {
 
   return (
     <main className="container">
-      <h1>RT-DocWatch</h1>
-      <p className="subtitle">Audit Konsistensi Dokumen Radioterapi Berbasis LLM</p>
+      <header>
+        <h1>RT-DocWatch</h1>
+        <p className="subtitle">Audit Konsistensi Dokumen Radioterapi Berbasis LLM</p>
+      </header>
 
-      <section className="card">
+      <section className={`card ${activeTab !== "audit" ? "mobile-hidden" : ""}`}>
         <label>URL API Python</label>
         <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} />
 
@@ -90,21 +99,39 @@ export function App() {
         {error && <p className="error">{error}</p>}
       </section>
 
-      {result && (
-        <section className="card">
-          <h2>Hasil Outcome</h2>
-          <ul>
-            <li>Near miss terdeteksi: {result.near_miss_detected}</li>
-            <li>Waktu QA manual: {result.qa_time_manual_minutes} menit</li>
-            <li>Waktu QA dengan LLM: {result.qa_time_llm_minutes} menit</li>
-            <li>Escape rate: {result.escape_rate}</li>
-            <li>Penurunan beban kerja tim: {result.team_workload_reduction_percent}%</li>
-          </ul>
+      <section className={`card ${activeTab !== "hasil" ? "mobile-hidden" : ""}`}>
+        <h2>Hasil Outcome</h2>
 
-          <h3>Inconsistency Detail</h3>
-          <pre>{JSON.stringify(result.inconsistencies, null, 2)}</pre>
-        </section>
-      )}
+        {!result && <p className="empty-state">Belum ada hasil audit. Jalankan audit terlebih dahulu.</p>}
+
+        {result && (
+          <>
+            <ul>
+              <li>Near miss terdeteksi: {result.near_miss_detected}</li>
+              <li>Waktu QA manual: {result.qa_time_manual_minutes} menit</li>
+              <li>Waktu QA dengan LLM: {result.qa_time_llm_minutes} menit</li>
+              <li>Escape rate: {result.escape_rate}</li>
+              <li>Penurunan beban kerja tim: {result.team_workload_reduction_percent}%</li>
+            </ul>
+
+            <h3>Inconsistency Detail</h3>
+            <pre>{JSON.stringify(result.inconsistencies, null, 2)}</pre>
+          </>
+        )}
+      </section>
+
+      <nav className="bottom-nav" aria-label="Navigasi mobile">
+        {tabs.map((tab) => (
+          <button
+            type="button"
+            key={tab.key}
+            className={activeTab === tab.key ? "active" : ""}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
     </main>
   );
 }
