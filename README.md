@@ -1,6 +1,6 @@
 # RT-DocWatch
 
-> Prototype **audit konsistensi dokumen radioterapi** berbasis **FastAPI + React (Vite)** untuk membantu deteksi dini ketidaksesuaian data kritis (misalnya laterality, dosis, dan jumlah fraksi).
+> **RT-DocWatch** adalah aplikasi prototype untuk audit konsistensi data antar dokumen radioterapi berbasis **FastAPI (backend)** dan **React + Vite (frontend)**.
 
 ![License](https://img.shields.io/badge/license-Educational-blue.svg)
 ![Backend](https://img.shields.io/badge/backend-FastAPI-009688.svg)
@@ -9,98 +9,179 @@
 
 ---
 
-## 📌 Daftar Isi
+## 📑 Daftar Isi
 
-- [Tentang Proyek](#-tentang-proyek)
+- [Gambaran Umum](#-gambaran-umum)
+- [Analisis Kodebase (Detail & Mendalam)](#-analisis-kodebase-detail--mendalam)
 - [Fitur Utama](#-fitur-utama)
-- [Fungsi Sistem (Apa yang Dikerjakan Aplikasi)](#-fungsi-sistem-apa-yang-dikerjakan-aplikasi)
-- [Arsitektur & Alur Kerja](#-arsitektur--alur-kerja)
+- [Fungsi Sistem](#-fungsi-sistem)
+- [Arsitektur Teknis](#-arsitektur-teknis)
 - [Struktur Proyek](#-struktur-proyek)
 - [Spesifikasi API](#-spesifikasi-api)
 - [Instalasi & Menjalankan](#-instalasi--menjalankan)
-- [Contoh Payload & Output](#-contoh-payload--output)
-- [Rencana Pengembangan](#-rencana-pengembangan)
-- [Kontributor & Kontak](#-kontributor--kontak)
-- [Dukungan / Donasi](#-dukungan--donasi)
-- [Disclaimer Klinis](#-disclaimer-klinis)
+- [Contoh Payload Uji](#-contoh-payload-uji)
+- [Keterbatasan Saat Ini](#-keterbatasan-saat-ini)
+- [Roadmap Pengembangan](#-roadmap-pengembangan)
+- [Author & Kontak](#-author--kontak)
+- [Donasi & Dukungan](#-donasi--dukungan)
+- [Disclaimer](#-disclaimer)
 
 ---
 
-## 🧭 Tentang Proyek
+## 🧭 Gambaran Umum
 
-**RT-DocWatch** adalah prototype untuk memvalidasi konsistensi data antar dokumen radioterapi.
+RT-DocWatch membantu proses QA radioterapi dengan cara membandingkan field kritis lintas dokumen (misalnya simulasi, resep, delivery), lalu menandai ketidaksesuaian (*inconsistency*) yang berpotensi menjadi **near miss**.
 
-Sistem membaca kumpulan record dokumen (contoh: simulasi, resep, delivery), lalu membandingkan field penting:
-
+Field audit utama:
 - `site`
 - `laterality`
 - `dose_gy`
 - `fraction_count`
 
-Jika terdapat perbedaan nilai antar dokumen, sistem menandainya sebagai **inconsistency** dengan tingkat risiko (`medium` atau `high`) dan menampilkan metrik outcome QA simulatif.
+Hasil audit berisi:
+- jumlah temuan (`near_miss_detected`),
+- estimasi waktu QA berbantuan sistem,
+- indikasi `escape_rate`,
+- dan detail mismatch per field.
+
+---
+
+## 🔍 Analisis Kodebase (Detail & Mendalam)
+
+### 1) Backend (`backend/main.py`)
+
+Backend dibangun dengan FastAPI dan memiliki 2 endpoint utama:
+
+1. **`GET /health`**
+   - Mengecek status layanan.
+   - Respon sederhana: `{ "status": "ok" }`.
+
+2. **`POST /audit`**
+   - Menerima payload bertipe `AuditRequest`.
+   - Melakukan validasi record + kalkulasi metrik QA.
+   - Mengembalikan inconsistency serta ringkasan outcome.
+
+#### Model data dan validasi
+- `DocumentRecord` memetakan setiap dokumen radioterapi.
+- `AuditRequest` mewajibkan:
+  - `records: List[DocumentRecord]`
+  - `qa_time_manual_minutes: float` dengan batas `>= 0`
+
+#### Mesin audit inti: `evaluate_consistency(records)`
+- Mengiterasi field audit tetap: `site`, `laterality`, `dose_gy`, `fraction_count`.
+- Menggunakan `Counter` untuk menghitung variasi nilai per field.
+- Bila nilai unik > 1, maka field ditandai **inconsistent**.
+- Severity:
+  - `high`: `laterality`, `dose_gy`, `fraction_count`
+  - `medium`: `site`
+
+#### Simulasi metrik outcome
+Saat request valid dan records tidak kosong:
+- `near_miss_detected`: jumlah total inconsistency.
+- `qa_time_llm_minutes`: `max(3.0, manual * 0.35)` (dibulatkan 2 desimal).
+- `team_workload_reduction_percent`: persentase efisiensi waktu.
+- `escape_rate`:
+  - `0.01` jika ada temuan risiko tinggi,
+  - `0.05` jika tidak ada high risk.
+
+#### Penanganan kasus khusus
+Jika `records` kosong, API mengembalikan objek fallback dengan nilai metrik nol dan `error` message agar frontend tetap bisa merender respon secara konsisten.
+
+---
+
+### 2) Frontend (`frontend/src/App.jsx`)
+
+Frontend menggunakan React function component tunggal dengan state lokal.
+
+#### Alur kerja UI
+1. User mengisi URL API dan JSON payload.
+2. Tombol **Jalankan Audit** aktif hanya jika JSON valid.
+3. Aplikasi melakukan `fetch` ke endpoint backend.
+4. Hasil ditampilkan pada panel **Hasil Outcome**.
+5. Pada layar mobile, panel dipisah menggunakan tab bawah: **Audit** dan **Hasil**.
+
+#### Komponen logika penting
+- `samplePayload`: payload default untuk demo mismatch.
+- `parsedPreview` (`useMemo`): validasi JSON real-time.
+- `runAudit()`:
+  - parse JSON,
+  - POST ke API,
+  - handle error response,
+  - set hasil ke state.
+
+#### UX yang sudah baik
+- Validasi JSON sebelum request.
+- Error handling yang jelas.
+- Responsif mobile (bottom navigation).
+- Hasil detail inconsistency ditampilkan dalam format JSON prettified.
+
+---
+
+### 3) Styling (`frontend/src/styles.css`)
+
+- Skema warna clean (biru-putih) untuk dashboard QA.
+- Card layout dengan shadow ringan.
+- Komponen input dan tombol konsisten.
+- Adaptive design menggunakan media query (`max-width: 768px`).
+- Bottom nav fixed pada mobile untuk navigasi cepat antar panel.
+
+---
+
+### 4) Dependency footprint
+
+#### Backend (`backend_requirements.txt`)
+- `fastapi`
+- `uvicorn`
+- `pydantic`
+- `python-multipart`
+
+#### Frontend (`frontend/package.json`)
+- Runtime: `react`, `react-dom`
+- Build/dev: `vite`
+
+Arsitektur dependency saat ini termasuk ringan dan cocok untuk prototyping cepat.
 
 ---
 
 ## ✨ Fitur Utama
 
-1. **Audit Konsistensi Antar Dokumen**
-   - Mendeteksi mismatch nilai antar record pasien untuk field klinis kunci.
-
-2. **Klasifikasi Severity Temuan**
-   - `high`: laterality, dose_gy, fraction_count.
-   - `medium`: site.
-
-3. **Perhitungan Outcome QA Simulatif**
-   - `near_miss_detected`
-   - `qa_time_llm_minutes`
-   - `qa_time_manual_minutes`
-   - `escape_rate`
-   - `team_workload_reduction_percent`
-
-4. **Frontend Interaktif Berbasis React**
-   - Input URL API backend.
-   - Editor payload JSON langsung di browser.
-   - Tampilan hasil audit dalam format ringkas + detail inconsistency.
-
-5. **Mobile-Friendly UI**
-   - Navigasi bawah (tab Audit / Hasil) untuk layar kecil.
+- ✅ Audit konsistensi lintas dokumen radioterapi.
+- ✅ Klasifikasi severity temuan (`medium` / `high`).
+- ✅ Simulasi metrik QA (waktu, workload reduction, escape rate).
+- ✅ Input payload JSON langsung dari antarmuka web.
+- ✅ Endpoint backend fleksibel (dapat diganti dari UI).
+- ✅ UI responsif untuk desktop dan mobile.
 
 ---
 
-## 🧩 Fungsi Sistem (Apa yang Dikerjakan Aplikasi)
+## ⚙️ Fungsi Sistem
 
-Secara fungsional, RT-DocWatch membantu tim QA dengan cara:
+Secara fungsional, RT-DocWatch dirancang untuk:
 
-- Menjadi **lapisan verifikasi cepat** sebelum review manual penuh.
-- Menyorot **potensi near-miss** lebih awal berdasarkan mismatch antar dokumen.
-- Memberikan indikator efisiensi waktu QA secara simulatif untuk keperluan evaluasi proses.
-
-> Catatan: Pada versi ini, kalkulasi metrik merupakan simulasi rule-based dan belum terhubung ke model klinis produksi atau sistem hospital information system.
+1. **Lapisan verifikasi awal** sebelum pemeriksaan manual final.
+2. **Deteksi dini potensi near miss** berbasis mismatch data antar dokumen.
+3. **Pendukung evaluasi proses QA** melalui metrik simulatif yang mudah dipahami tim.
+4. **Sarana demo & edukasi** alur audit dokumen radioterapi berbasis rule engine.
 
 ---
 
-## 🏗️ Arsitektur & Alur Kerja
+## 🏗️ Arsitektur Teknis
 
-### Backend (FastAPI)
-
-- Endpoint health check: `GET /health`
-- Endpoint audit: `POST /audit`
-- Core logic:
-  1. Validasi payload.
-  2. Evaluasi konsistensi per field.
-  3. Tentukan severity.
-  4. Hitung metrik outcome simulasi.
-  5. Kembalikan hasil JSON.
-
-### Frontend (React + Vite)
-
-- Menyediakan payload contoh default.
-- Kirim request `POST` ke API backend.
-- Tampilkan hasil audit dan detail inconsistency.
-
-### Alur Singkat
-
-`User Input JSON -> Frontend -> POST /audit -> Backend Evaluation -> JSON Result -> Frontend Result Panel`
+```text
+User Input JSON (Frontend)
+        │
+        ▼
+POST /audit (FastAPI)
+        │
+        ▼
+Rule-based Consistency Evaluation
+        │
+        ▼
+Outcome Metrics + Inconsistency Detail (JSON)
+        │
+        ▼
+Result Rendering (Frontend)
+```
 
 ---
 
@@ -109,15 +190,15 @@ Secara fungsional, RT-DocWatch membantu tim QA dengan cara:
 ```bash
 RT-DocWatch/
 ├── backend/
-│   └── main.py                # API FastAPI + core audit logic
+│   └── main.py
 ├── frontend/
-│   ├── src/
-│   │   ├── App.jsx            # UI audit + result
-│   │   ├── main.jsx           # React entry point
-│   │   └── styles.css         # Styling + mobile navigation
+│   ├── index.html
 │   ├── package.json
-│   └── index.html
-├── backend_requirements.txt   # Dependency Python backend
+│   └── src/
+│       ├── App.jsx
+│       ├── main.jsx
+│       └── styles.css
+├── backend_requirements.txt
 └── README.md
 ```
 
@@ -128,7 +209,6 @@ RT-DocWatch/
 ### `GET /health`
 
 **Response**
-
 ```json
 {
   "status": "ok"
@@ -137,8 +217,7 @@ RT-DocWatch/
 
 ### `POST /audit`
 
-**Request Body**
-
+**Request body**
 ```json
 {
   "qa_time_manual_minutes": 28,
@@ -155,8 +234,7 @@ RT-DocWatch/
 }
 ```
 
-**Response Body (contoh)**
-
+**Response body (contoh)**
 ```json
 {
   "near_miss_detected": 3,
@@ -179,9 +257,9 @@ RT-DocWatch/
 
 ---
 
-## ⚙️ Instalasi & Menjalankan
+## 🚀 Instalasi & Menjalankan
 
-## 1) Backend
+### 1) Jalankan Backend
 
 ```bash
 python -m venv .venv
@@ -190,9 +268,11 @@ pip install -r backend_requirements.txt
 uvicorn backend.main:app --reload
 ```
 
-Backend aktif di: `http://localhost:8000`
+Backend berjalan di: **http://localhost:8000**
 
-## 2) Frontend
+---
+
+### 2) Jalankan Frontend
 
 ```bash
 cd frontend
@@ -200,13 +280,13 @@ npm install
 npm run dev
 ```
 
-Frontend aktif di: `http://localhost:5173`
+Frontend berjalan di: **http://localhost:5173**
 
 ---
 
-## 🧪 Contoh Payload & Output
+## 🧪 Contoh Payload Uji
 
-Gunakan payload berikut untuk memunculkan ketidaksesuaian laterality/dose/fraction:
+Gunakan payload ini agar sistem menampilkan mismatch pada `laterality`, `dose_gy`, dan `fraction_count`:
 
 ```json
 {
@@ -242,55 +322,61 @@ Gunakan payload berikut untuk memunculkan ketidaksesuaian laterality/dose/fracti
 
 ---
 
-## 🚀 Rencana Pengembangan
+## ⚠️ Keterbatasan Saat Ini
 
-- Integrasi autentikasi & role-based access.
-- Audit trail dan logging terstruktur.
-- Integrasi database untuk histori audit.
-- Export laporan PDF/CSV.
-- Integrasi NLP/LLM yang tervalidasi klinis dengan governance keamanan data.
-- Rule engine yang dapat dikustomisasi per institusi.
-
----
-
-## 👤 Kontributor & Kontak
-
-**Author:** Lettu Kes dr. Muhammad Sobri Maulana, S.Kom, CEH, OSCP, OSCE
-
-- GitHub: [github.com/sobri3195](https://github.com/sobri3195)
-- Email: [muhammadsobrimaulana31@gmail.com](mailto:muhammadsobrimaulana31@gmail.com)
-- Website: [muhammadsobrimaulana.netlify.app](https://muhammadsobrimaulana.netlify.app)
-- Website 2: [muhammad-sobri-maulana-kvr6a.sevalla.page](https://muhammad-sobri-maulana-kvr6a.sevalla.page/)
-- YouTube: [@muhammadsobrimaulana6013](https://www.youtube.com/@muhammadsobrimaulana6013)
-- Telegram: [winlin_exploit](https://t.me/winlin_exploit)
-- TikTok: [@dr.sobri](https://www.tiktok.com/@dr.sobri)
-- WhatsApp Group: [Gabung Grup](https://chat.whatsapp.com/B8nwRZOBMo64GjTwdXV8Bl)
-- Gumroad: [maulanasobri.gumroad.com](https://maulanasobri.gumroad.com/)
-- Toko Online Sobri: [pegasus-shop.netlify.app](https://pegasus-shop.netlify.app)
+- Rule engine masih statis (belum adaptive / learning).
+- Belum ada autentikasi, audit trail, dan role-based access.
+- Belum terintegrasi dengan HIS/RIS/EMR/DICOM RT.
+- Metrik outcome masih simulasi (bukan validasi klinis real-world).
+- Belum ada persistence database dan histori audit.
 
 ---
 
-## 💖 Dukungan / Donasi
+## 🛣️ Roadmap Pengembangan
 
-Jika proyek ini bermanfaat, dukungan Anda akan sangat membantu pengembangan lanjutan:
-
-- Lynk: [lynk.id/muhsobrimaulana](https://lynk.id/muhsobrimaulana)
-- Trakteer: [trakteer.id/g9mkave5gauns962u07t](https://trakteer.id/g9mkave5gauns962u07t)
-- KaryaKarsa: [karyakarsa.com/muhammadsobrimaulana](https://karyakarsa.com/muhammadsobrimaulana)
-- Nyawer: [nyawer.co/MuhammadSobriMaulana](https://nyawer.co/MuhammadSobriMaulana)
-
----
-
-## ⚠️ Disclaimer Klinis
-
-RT-DocWatch adalah **prototype edukasi/research** dan **bukan** medical device tervalidasi.
-
-- Tidak menggantikan clinical judgment.
-- Tidak menggantikan QA formal institusi.
-- Wajib melalui validasi, uji klinis internal, dan governance sebelum penggunaan operasional klinis.
+- Integrasi data pipeline klinis (FHIR / DICOM-RT aware).
+- Rule configurator dinamis berbasis profile institusi.
+- Dashboard tren QA dan analytics longitudinal.
+- Export laporan (PDF/CSV) dan notifikasi otomatis.
+- Integrasi LLM guardrailed + human-in-the-loop review.
 
 ---
 
-## 📄 Lisensi
+## 👤 Author & Kontak
 
-Saat ini belum ada lisensi formal yang ditetapkan. Disarankan menambahkan lisensi open-source sesuai kebutuhan (mis. MIT/Apache-2.0) sebelum distribusi luas.
+**Author:** Lettu Kes dr. Muhammad Sobri Maulana, S.Kom, CEH, OSCP, OSCE  
+**GitHub:** https://github.com/sobri3195  
+**Email:** muhammadsobrimaulana31@gmail.com  
+**Website:** https://muhammadsobrimaulana.netlify.app  
+
+### 🌐 Social & Community
+
+- YouTube: https://www.youtube.com/@muhammadsobrimaulana6013
+- Telegram: https://t.me/winlin_exploit
+- TikTok: https://www.tiktok.com/@dr.sobri
+- Grup WhatsApp: https://chat.whatsapp.com/B8nwRZOBMo64GjTwdXV8Bl
+- Landing page: https://muhammad-sobri-maulana-kvr6a.sevalla.page/
+- Toko Online Sobri: https://pegasus-shop.netlify.app
+- Gumroad: https://maulanasobri.gumroad.com/
+
+---
+
+## 💝 Donasi & Dukungan
+
+Jika proyek ini bermanfaat, dukungan Anda sangat berarti untuk pengembangan lanjutan:
+
+- Lynk: https://lynk.id/muhsobrimaulana
+- Trakteer: https://trakteer.id/g9mkave5gauns962u07t
+- KaryaKarsa: https://karyakarsa.com/muhammadsobrimaulana
+- Nyawer: https://nyawer.co/MuhammadSobriMaulana
+
+---
+
+## 📌 Disclaimer
+
+Aplikasi ini adalah **prototype edukasi dan riset**. Bukan perangkat medis tersertifikasi, bukan pengganti clinical judgment, dan tidak boleh dijadikan satu-satunya dasar keputusan terapi pasien.
+
+Semua implementasi untuk lingkungan klinis wajib melalui:
+- validasi medis formal,
+- tata kelola keamanan data,
+- serta kepatuhan regulasi yang berlaku.
